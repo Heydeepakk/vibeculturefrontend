@@ -145,7 +145,7 @@ const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, f
     const { x, w } = fitRect(frontRes.aspect, W, H)
     const [l, r] = frontRes.waist || [0, 1]
     const inset = (r - l) * w * HELD_BY_WAIST[kind]
-    const toBox = px => (px / W) * 200
+    const toBox = px => ((px - frontFit.x) / frontFit.w) * 200
     return [toBox(x + l * w + inset), toBox(x + r * w - inset)]
   }, [kind, frontRes, W, H])
 
@@ -165,8 +165,8 @@ const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, f
     <motion.div className='relative' style={{ width: W, height: garmentHeight(kind, W), rotateY, rotateX, z, transformPerspective: perspective, transformStyle: 'preserve-3d', originY: '5%' }}>
       {/* hanger with a little thickness: two faces and a darker middle */}
       {(layers > 5 ? [-1.6, 0, 1.6] : [0]).map(hz => (
-        <Hanger key={hz} kind={kind} clips={clips} className='absolute top-0 left-0 w-full'
-          style={{ transform: `translateZ(${hz}px)`, filter: hz === 0 && layers > 5 ? 'brightness(0.72)' : undefined }} />
+        <Hanger key={hz} kind={kind} clips={clips} className='absolute top-0'
+          style={{ left: frontFit.x, width: frontFit.w, transform: `translateZ(${hz}px)`, filter: hz === 0 && layers > 5 ? 'brightness(0.72)' : undefined }} />
       ))}
 
       {soft && <ClothFilter id={soft} width={W} height={H} flex={drape} phase={phase} ruffle={ruffle} />}
