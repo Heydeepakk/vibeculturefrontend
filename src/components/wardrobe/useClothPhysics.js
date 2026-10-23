@@ -17,6 +17,8 @@ const flutter = (t) => 0.5 * Math.sin(t * 5.3) + 0.5 * Math.sin(t * 8.7 + 1.1)
 //          (a hard push or sudden stop makes clothes fly) and held back by air drag while it moves
 //  twist – the hanger turning a little on its hook (deg)
 //  flex  – the hem trailing the shoulders, with its own quicker wobble (deg of skew)
+//  phase – fabric clock for the ripples running through the cloth; runs faster in a gust or a swing
+//  ruffle – how hard the fabric is moving right now (0 … ~1.2): ripple depth and fold contrast
 // `kick(degPerSecond)` gives it a push (pointer brushing past, a neighbour bumping into it).
 const NO_MOTION = { v: 0, a: 0 }
 const RAD = Math.PI / 180
@@ -28,7 +30,9 @@ const useClothPhysics = ({ index = 0, railSample, enabled = true, calm = false, 
   const swing = useMotionValue(0)
   const twist = useMotionValue(0)
   const flex = useMotionValue(0)
-  const s = useRef({ a: 0, w: 0, tw: 0, tv: 0, f: 0, fv: 0, asleep: false })
+  const phase = useMotionValue(index * 1.7)
+  const ruffle = useMotionValue(0)
+  const s = useRef({ a: 0, w: 0, tw: 0, tv: 0, f: 0, fv: 0, ph: index * 1.7, r: 0, asleep: false })
   const live = useRef({ enabled, calm, strength })
   live.current = { enabled, calm, strength }
 
@@ -68,22 +72,29 @@ const useClothPhysics = ({ index = 0, railSample, enabled = true, calm = false, 
     st.fv += ((target - st.f) * 60 - st.fv * 9) * dt
     st.f += st.fv * dt
 
+    // soft fabric never stops moving at once: the ripple eases in with a gust or a swing and fades slowly
+    const stir = clamp(air * 0.85 + Math.abs(st.w) * 0.012 + Math.abs(st.fv) * 0.01, 0, 1.2)
+    st.r += (stir - st.r) * Math.min(1, dt * (stir > st.r ? 4 : 1.2))
+    st.ph += dt * (0.35 + st.r * 2.2)
+
     // settled and no wind: stop touching the page until something moves it again
     const resting = air < 0.02 && Math.abs(v) < 5 && Math.abs(acc) < 50 &&
-      Math.abs(st.a) + Math.abs(st.w) + Math.abs(st.tw) + Math.abs(st.tv) + Math.abs(st.f) + Math.abs(st.fv) < 0.08
+      Math.abs(st.a) + Math.abs(st.w) + Math.abs(st.tw) + Math.abs(st.tv) + Math.abs(st.f) + Math.abs(st.fv) + st.r < 0.08
     if (resting && st.asleep) return
     st.asleep = resting
 
     swing.set(st.a)
     twist.set(clamp(st.tw, -12, 12))
     flex.set(clamp(st.f, -10, 10))
+    phase.set(st.ph)
+    ruffle.set(st.r)
   })
 
   const kick = useCallback((impulse) => {
     if (!reduce) { s.current.w += impulse; s.current.asleep = false }
   }, [reduce])
 
-  return { swing, twist, flex, kick }
+  return { swing, twist, flex, phase, ruffle, kick }
 }
 
 export default useClothPhysics

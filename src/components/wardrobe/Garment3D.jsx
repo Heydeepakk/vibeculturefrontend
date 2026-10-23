@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react'
-import { motion, useTransform } from 'framer-motion'
+import React, { useId, useMemo } from 'react'
+import { motion, motionValue, useTransform } from 'framer-motion'
 import Hanger from './Hanger'
+import ClothFilter from './ClothFilter'
 import { useCutout } from './cutout'
 
 // Geometry relative to the garment width W (the hanger SVG is W wide and W/2 tall):
@@ -77,14 +78,16 @@ const SidePanel = ({ res, side, mirrored, x, top, depth, height, rotateY }) => {
   )
 }
 
+const STILL = motionValue(0)
+
 const faceStyle = transform => ({
   position: 'absolute', inset: 0, transform, transformOrigin: '50% 0%',
   backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
 })
 
-const Face = ({ res, back, mirrored, shade, alt }) => {
+const Face = ({ res, back, mirrored, shade, alt, cloth }) => {
   const filter = useTransform(shade, s =>
-    `brightness(${(1 - s) * (mirrored ? 0.9 : 1)}) drop-shadow(0 16px 14px rgba(0,0,0,${res?.cut ? 0.16 : 0.08}))`)
+    `${cloth ? `url(#${cloth}) ` : ''}brightness(${(1 - s) * (mirrored ? 0.9 : 1)}) drop-shadow(0 16px 14px rgba(0,0,0,${res?.cut ? 0.16 : 0.08}))`)
   if (!res) return null
   return (
     <motion.img
@@ -105,7 +108,10 @@ const Face = ({ res, back, mirrored, shade, alt }) => {
 // Between the front and back photos sits a stack of "core" layers (the silhouette in the fabric's edge
 // colour), so turning it sideways shows real thickness instead of a paper-thin card. When the product has
 // real side photos, those stand on the left/right edges and set the thickness instead.
-const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, flex = 0, z = 0, perspective = 1100, showBack = true, layers = 6 }) => {
+// `drape`, `phase` and `ruffle` (from useClothPhysics) drive the soft-fabric filter on the photos: the hem
+// curves with the swing and the cloth ripples and folds, instead of the whole garment moving like card.
+const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, flex = 0, drape = flex, phase, ruffle, z = 0, perspective = 1100, showBack = true, layers = 6 }) => {
+  const clothId = `cloth-${useId().replace(/:/g, '')}`
   const frontRes = useCutout(product.image?.[0])
   // the back is only fetched once someone can actually turn the garment around
   const backRes = useCutout(showBack ? product.image?.[1] : null)
@@ -118,6 +124,8 @@ const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, f
   const geo = CLOTH[kind] || CLOTH.tshirt
   const H = geo.height * W
   const isCut = frontRes?.cut !== false
+  // only cut-out photos are fabric; a plain product photo with a background stays flat
+  const soft = isCut && frontRes ? clothId : null
   const frontFit = frontRes?.aspect ? fitRect(frontRes.aspect, W, H) : { x: 0, w: W, h: H }
   const sideRes = leftRes?.aspect ? leftRes : rightRes?.aspect ? rightRes : null
   // with a side photo, the garment is exactly as thick as the photo shows it
@@ -142,6 +150,8 @@ const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, f
   }, [kind, frontRes, W, H])
 
   const back = backRes || frontRes
+  const skewShare = soft ? 0.45 : 1
+  const flexSkew = useTransform(typeof flex?.get === 'function' ? flex : STILL, f => f * skewShare)
   const cores = Array.from({ length: coreCount }, (_, i) => {
     const t = coreCount === 1 ? 0 : (i / (coreCount - 1)) * 2 - 1 // -1 (back) … 1 (front)
     // only mix in the back photo when both were cut out the same way, or the side shows a photo edge
@@ -159,8 +169,11 @@ const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, f
           style={{ transform: `translateZ(${hz}px)`, filter: hz === 0 && layers > 5 ? 'brightness(0.72)' : undefined }} />
       ))}
 
-      {/* the cloth hangs from the hanger and bends: `flex` skews it from the top, so the hem trails */}
-      <motion.div className='absolute left-0 w-full' style={{ top: geo.top * W, height: H, transformStyle: 'preserve-3d', skewX: flex, originY: '0%' }}>
+      {soft && <ClothFilter id={soft} width={W} height={H} flex={drape} phase={phase} ruffle={ruffle} />}
+
+      {/* the cloth hangs from the hanger and bends: `flex` skews it a little from the top and the filter curves
+          the hem the rest of the way, so it trails like fabric rather than tilting like a board */}
+      <motion.div className='absolute left-0 w-full' style={{ top: geo.top * W, height: H, transformStyle: 'preserve-3d', skewX: flexSkew, originY: '0%' }}>
         {frontRes && cores.map(c => (
           <img key={c.t} src={c.src} alt='' aria-hidden='true' draggable={false}
             className={`absolute inset-0 w-full h-full object-contain object-top select-none ${c.plain ? 'rounded-md' : ''}`}
@@ -179,10 +192,10 @@ const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, f
           </>
         )}
         <div style={faceStyle(`translateZ(${depth / 2 + 0.5}px) rotateX(${-lean}deg)`)}>
-          <Face res={frontRes} shade={shade} alt={product.name} />
+          <Face res={frontRes} shade={shade} alt={product.name} cloth={soft} />
         </div>
         <div style={faceStyle(`rotateY(180deg) translateZ(${depth / 2 + 0.5}px) rotateX(${-lean}deg)`)}>
-          <Face res={back} mirrored={!backRes} shade={shade} alt={`${product.name} back`} />
+          <Face res={back} mirrored={!backRes} shade={shade} alt={`${product.name} back`} cloth={soft} />
         </div>
       </motion.div>
     </motion.div>

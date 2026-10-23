@@ -56,7 +56,7 @@ const GarmentViewer = forwardRef(({ product, kind = 'tshirt', className = 'w-[mi
       >
         {stageW > 0 && <div className='wardrobe-rod absolute -left-[60%] -right-[60%]' style={{ top: stageW * 0.05 - 4 }} />}
         <motion.div style={{ rotate: cloth.swing, transformOrigin: '50% 5%' }}>
-          {stageW > 0 && <Garment3D product={product} kind={kind} width={stageW} rotateY={shown} flex={cloth.flex} perspective={1400} layers={layers} />}
+          {stageW > 0 && <Garment3D product={product} kind={kind} width={stageW} rotateY={shown} flex={cloth.flex} phase={cloth.phase} ruffle={cloth.ruffle} perspective={1400} layers={layers} />}
         </motion.div>
       </motion.div>
       <div className='flex flex-col items-center gap-2 mt-4'>
