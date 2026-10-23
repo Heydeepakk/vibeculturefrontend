@@ -12,14 +12,17 @@ const GarmentViewer = forwardRef(({ product, kind = 'tshirt', className = 'w-[mi
   const [stageW, setStageW] = useState(0)
   const [showBack, setShowBack] = useState(false)
   const hasBack = (product.image || []).length > 1
-  // same breeze as the rack, a little gentler indoors
-  const cloth = useClothPhysics({ index: 3, strength: 0.6 })
+  // same breeze as the rack, a little gentler indoors; keeps moving while the fitting room covers the page
+  const visible = useRef(true)
+  const cloth = useClothPhysics({ index: 3, strength: 0.6, foreground: true, visibleRef: visible })
   const shown = useTransform([rotateY, cloth.twist], ([r, t]) => r + t * 0.5)
 
   useEffect(() => {
-    const ro = new ResizeObserver(([e]) => setStageW(e.contentRect.width))
-    stageRef.current && ro.observe(stageRef.current)
-    return () => ro.disconnect()
+    // width only: ignore the height wobble from the phone URL bar
+    const ro = new ResizeObserver(([e]) => setStageW(w => (Math.abs(w - e.contentRect.width) < 1 ? w : e.contentRect.width)))
+    const io = typeof IntersectionObserver !== 'undefined' && new IntersectionObserver(([e]) => { visible.current = e.isIntersecting })
+    if (stageRef.current) { ro.observe(stageRef.current); io && io.observe(stageRef.current) }
+    return () => { ro.disconnect(); io && io.disconnect() }
   }, [])
 
   // comes off the rail sideways and turns to face you
