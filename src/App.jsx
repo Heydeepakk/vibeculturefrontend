@@ -16,7 +16,6 @@ import { ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import Verify from './pages/Verify'
 import Profile from './pages/Profile'
-import { BuyerToast, TrustBar } from './components/SocialProof'
 
 const ScrollToTop = () => {
   const { pathname } = useLocation()
@@ -28,7 +27,6 @@ const App = () => {
   return (
     <div className='bg-white min-h-screen page-enter'>
       <ToastContainer theme='light' toastStyle={{ background: '#ffffff', border: '1px solid rgba(17,17,17,0.1)', color: '#111111' }} />
-      <BuyerToast />
       <ScrollToTop />
       <Navbar />
       <SearchBar />
@@ -45,7 +43,6 @@ const App = () => {
         <Route path='/verify' element={<Verify />} />
         <Route path='/profile' element={<Profile />} />
       </Routes>
-      <TrustBar />
       <Footer />
     </div>
   )

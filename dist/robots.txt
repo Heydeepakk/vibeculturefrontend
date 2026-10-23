@@ -1,42 +1,4 @@
 User-agent: *
 Allow: /
 
-# Allow all jewelry category pages
-Allow: /collection
-Allow: /collection?category=rings
-Allow: /collection?category=necklaces
-Allow: /collection?category=bracelets
-Allow: /collection?category=earrings
-Allow: /collection?category=watches
-
-# Allow specific jewelry type pages
-Allow: /collection?type=diamond-rings
-Allow: /collection?type=engagement-rings
-Allow: /collection?type=wedding-bands
-Allow: /collection?type=gold-necklaces
-Allow: /collection?type=silver-jewelry
-
-# Allow main pages
-Allow: /about
-Allow: /contact
-Allow: /product/*
-
-# Disallow admin and private areas
-Disallow: /admin/
-Disallow: /api/
-Disallow: /login
-Disallow: /cart
-Disallow: /orders
-Disallow: /place-order
-Disallow: /verify
-
-# Disallow search parameters that don't add SEO value
-Disallow: /*?search=*
-Disallow: /*?sort=*
-Disallow: /*?filter=*
-
-# Sitemap location
-Sitemap: https://luxejewelry.com/sitemap.xml
-
-# Crawl delay (optional - helps prevent server overload)
-Crawl-delay: 1
+Sitemap: https://www.vibeculture.in/sitemap.xml

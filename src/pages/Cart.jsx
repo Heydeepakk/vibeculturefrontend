@@ -1,9 +1,14 @@
-import React, { useContext, useEffect, useState } from 'react'
+import React, { useContext, useEffect, useMemo, useState } from 'react'
 import { ShopContext } from '../context/ShopContext'
 import Title from '../components/Title'
 import { assets } from '../assets/assets'
 import CartTotal from '../components/CartTotal'
 import { motion, AnimatePresence } from 'framer-motion'
+import HangerRail from '../components/wardrobe/HangerRail'
+import Hanger from '../components/wardrobe/Hanger'
+import FreeDeliveryBar from '../components/wardrobe/FreeDeliveryBar'
+import { garmentKind } from '../components/wardrobe/cutout'
+import { getRecentlyViewed } from '../components/wardrobe/journey'
 
 const Cart = () => {
   const { products, currency, cartItems, updateQuantity, navigate } = useContext(ShopContext)
@@ -20,6 +25,24 @@ const Cart = () => {
     }
   }, [cartItems, products])
 
+  const hangable = p => typeof p.category === 'object' && p.category
+  const withKind = p => ({ ...p, _kind: garmentKind(p.category) })
+
+  // everything in the bag, hanging on its own little rail
+  const bagRail = useMemo(() => [...new Set(cartData.map(i => i._id))]
+    .map(id => products.find(p => p._id === id)).filter(p => p && hangable(p)).map(withKind), [cartData, products])
+
+  // "complete the look": first the racks the bag doesn't cover yet (tee in bag → lowers, jeans…), then the rest
+  const suggestions = useMemo(() => {
+    const inBag = new Set(bagRail.map(p => p._id))
+    const kinds = new Set(bagRail.map(p => p._kind))
+    const rest = products.filter(p => hangable(p) && !inBag.has(p._id)).map(withKind)
+    return [...rest.filter(p => !kinds.has(p._kind)), ...rest.filter(p => kinds.has(p._kind))].slice(0, 12)
+  }, [bagRail, products])
+
+  const recent = useMemo(() => getRecentlyViewed()
+    .map(id => products.find(p => p._id === id)).filter(p => p && hangable(p)).map(withKind), [products])
+
   const getItemPrice = (p, size) => p?.variants?.[size] ? p.variants[size].price : p?.price || 0
   const getVariantInfo = (p, size) => p?.variants?.[size]?.attributes || null
 
@@ -32,15 +55,36 @@ const Cart = () => {
 
         {cartData.length === 0 ? (
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className='text-center py-24'>
-            <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 3, repeat: Infinity }} className='text-7xl mb-6 inline-block'>🛒</motion.div>
-            <h3 className='font-serif text-2xl text-gray-700 italic mb-3'>Your cart is empty</h3>
-            <p className='text-gray-500 text-sm mb-8'>Discover something you'll love</p>
+            <motion.div className='w-32 mx-auto mb-6' style={{ transformOrigin: '50% 5%' }}
+              animate={{ rotate: [-5, 5, -5] }} transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}>
+              <Hanger kind='tshirt' className='w-full' />
+            </motion.div>
+            <h3 className='font-serif text-2xl text-gray-700 italic mb-3'>Your bag is empty</h3>
+            <p className='text-gray-500 text-sm mb-8'>This hanger is waiting for something you&apos;ll love</p>
             <button onClick={() => navigate('/collection')} className='bg-gray-900 text-white hover:bg-black px-10 py-4 rounded-full text-sm tracking-widest uppercase transition-all'>
               Start Shopping
             </button>
+            {recent.length > 0 && (
+              <div className='mt-16 -mx-4 sm:-mx-6 bg-[#f5f2ed] rounded-3xl pt-8 text-left'>
+                <h2 className='px-6 sm:px-10 font-serif text-2xl font-light text-gray-900'>You picked these up earlier</h2>
+                <HangerRail products={recent} railId='cart-recent' />
+              </div>
+            )}
           </motion.div>
         ) : (
           <>
+            {bagRail.length > 0 && (
+              <div className='-mx-4 sm:-mx-6 bg-[#f5f2ed] rounded-3xl pt-6 mb-6'>
+                <div className='px-6 sm:px-10 flex items-baseline justify-between'>
+                  <h2 className='font-serif text-xl sm:text-2xl font-light text-gray-900'>Your bag, on the rail</h2>
+                  <span className='text-[10px] tracking-[0.3em] uppercase text-gray-500'>{bagRail.length} {bagRail.length === 1 ? 'piece' : 'pieces'}</span>
+                </div>
+                <HangerRail products={bagRail} railId='cart-bag' />
+              </div>
+            )}
+
+            <FreeDeliveryBar className='bg-white rounded-2xl p-4 border border-gray-100 shadow-sm mb-6' />
+
             <div className='space-y-3 mb-10'>
               <AnimatePresence>
                 {cartData.map((item, index) => {
@@ -70,7 +114,7 @@ const Cart = () => {
                             <span key={i} className='bg-gray-100 text-gray-700 text-[10px] px-2 py-0.5 rounded-full border border-gray-200'>
                               {a.attributeName}: {a.variantValue}
                             </span>
-                          )) : (
+                          )) : item.size !== '0' && (
                             <span className='bg-gray-100 text-gray-600 text-[10px] px-2 py-0.5 rounded-full border border-gray-200'>{item.size}</span>
                           )}
                         </div>
@@ -112,6 +156,16 @@ const Cart = () => {
                 </button>
               </div>
             </div>
+
+            {suggestions.length > 0 && (
+              <div className='mt-14 -mx-4 sm:-mx-6 bg-[#f5f2ed] rounded-3xl pt-8'>
+                <div className='px-6 sm:px-10'>
+                  <p className='text-[10px] tracking-[0.35em] uppercase text-gray-500 mb-1'>Complete the look</p>
+                  <h2 className='font-serif text-2xl font-light text-gray-900'>Goes well with what&apos;s in your bag</h2>
+                </div>
+                <HangerRail products={suggestions} railId='cart-suggest' />
+              </div>
+            )}
           </>
         )}
       </div>

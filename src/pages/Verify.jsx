@@ -1,5 +1,6 @@
 import React from 'react'
 import { useContext } from 'react'
+import { markJustOrdered } from '../components/wardrobe/journey'
 import { ShopContext } from '../context/ShopContext'
 import { useSearchParams } from 'react-router-dom'
 import { useEffect } from 'react'
@@ -25,6 +26,7 @@ const Verify = () => {
 
             if (response.data.success) {
                 setCartItems({})
+                markJustOrdered()
                 navigate('/orders')
             } else {
                 navigate('/cart')

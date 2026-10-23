@@ -3,6 +3,8 @@ import { ShopContext } from '../context/ShopContext'
 import Title from '../components/Title'
 import axios from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
+import OrderCelebration from '../components/wardrobe/OrderCelebration'
+import { takeJustOrdered } from '../components/wardrobe/journey'
 
 const STEPS = ['Order Placed', 'Packing', 'Shipped', 'Out for delivery', 'Delivered']
 
@@ -64,6 +66,7 @@ const Orders = () => {
   const { backendUrl, token, currency } = useContext(ShopContext)
   const [orderData, setOrderData] = useState([])
   const [tracking, setTracking] = useState(null)
+  const [celebrate, setCelebrate] = useState(takeJustOrdered)
 
   const loadOrderData = async () => {
     try {
@@ -85,6 +88,7 @@ const Orders = () => {
 
   return (
     <div className='min-h-screen bg-[#f8f9fa] pt-6 pb-20 px-4 sm:px-6'>
+      <AnimatePresence>{celebrate && <OrderCelebration onDone={() => setCelebrate(false)} />}</AnimatePresence>
       <div className='max-w-4xl mx-auto'>
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className='py-10 border-b border-[#0d6b9f]/10 mb-10'>
@@ -110,7 +114,7 @@ const Orders = () => {
                         <span>·</span>
                         <span>Qty: {item.quantity}</span>
                         <span>·</span>
-                        <span>Size: {item.size}</span>
+                        {item.size !== '0' && <span>Size: {item.size}</span>}
                       </div>
                       <div className='flex flex-wrap gap-4 text-xs text-gray-600 pt-1'>
                         <span>{new Date(item.date).toDateString()}</span>

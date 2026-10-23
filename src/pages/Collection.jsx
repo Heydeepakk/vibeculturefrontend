@@ -1,171 +1,114 @@
-import React, { useContext, useEffect, useState } from 'react'
+import React, { useContext, useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { ShopContext } from '../context/ShopContext'
-import { assets } from '../assets/assets'
-import Title from '../components/Title'
-import ProductItem from '../components/ProductItem'
 import { useSearchParams } from 'react-router-dom'
-import axios from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
+import HangerRail from '../components/wardrobe/HangerRail'
+import { garmentKind, RACKS } from '../components/wardrobe/cutout'
 
 const Collection = () => {
-  const { products, search, showSearch, backendUrl } = useContext(ShopContext)
-  const [showFilter, setShowFilter] = useState(false)
-  const [filterProducts, setFilterProducts] = useState([])
-  const [category, setCategory] = useState([])
-  const [subCategory, setSubCategory] = useState([])
-  const [sortType, setSortType] = useState('relavent')
-  const [categories, setCategories] = useState([])
-  const [subCategories, setSubCategories] = useState([])
-  const [searchParams] = useSearchParams()
-  const [activeCategory, setActiveCategory] = useState('')
+  const { products, search, showSearch } = useContext(ShopContext)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [sortType, setSortType] = useState('newest')
+  const rack = RACKS[searchParams.get('rack')] ? searchParams.get('rack') : 'all'
+  const category = searchParams.get('category') || ''
 
-  useEffect(() => {
-    axios.get(backendUrl + '/api/category/list').then(r => r.data.success && setCategories(r.data.categories)).catch(() => {})
-    axios.get(backendUrl + '/api/subcategory/list').then(r => r.data.success && setSubCategories(r.data.subCategories)).catch(() => {})
-    const cat = searchParams.get('category')
-    const sub = searchParams.get('subcategory')
-    if (cat) { setActiveCategory(cat); setCategory([cat]) }
-    if (sub) setSubCategory([sub])
-  }, [searchParams])
-
-  const applyFilter = () => {
-    let copy = products.slice()
-    if (showSearch && search) copy = copy.filter(i => i.name.toLowerCase().includes(search.toLowerCase()))
-    if (category.length > 0) {
-      copy = copy.filter(i => {
-        const id = typeof i.category === 'object' ? i.category._id : i.category
-        const name = typeof i.category === 'object' ? i.category.name : i.category
-        return category.includes(id) || category.includes(name)
-      })
-    }
-    if (subCategory.length > 0) {
-      copy = copy.filter(i => {
-        const id = typeof i.subCategory === 'object' ? i.subCategory._id : i.subCategory
-        return subCategory.includes(id)
-      })
-    }
-    setFilterProducts(copy)
+  const setParam = (key, value) => {
+    const next = new URLSearchParams(searchParams)
+    if (value) next.set(key, value); else next.delete(key)
+    if (key === 'rack') next.delete('category')
+    setSearchParams(next, { replace: true })
   }
 
-  const sortProduct = () => {
-    const copy = filterProducts.slice()
-    if (sortType === 'low-high') setFilterProducts(copy.sort((a, b) => a.price - b.price))
-    else if (sortType === 'high-low') setFilterProducts(copy.sort((a, b) => b.price - a.price))
-    else applyFilter()
-  }
+  const withKind = useMemo(() => products
+    .filter(p => typeof p.category === 'object' && p.category)
+    .map(p => ({ ...p, _kind: garmentKind(p.category) })), [products])
 
-  useEffect(() => { applyFilter() }, [category, subCategory, search, showSearch, products])
-  useEffect(() => { sortProduct() }, [sortType])
+  // categories that hang on the selected rack
+  const categories = useMemo(() => {
+    const map = new Map()
+    withKind.forEach(p => (rack === 'all' || p._kind === rack) && map.set(p.category._id, p.category))
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name))
+  }, [withKind, rack])
 
-  const activeCatName = categories.find(c => c._id === activeCategory)?.name
-  const pageTitle = activeCatName ? `${activeCatName} Collection | VibeCulture` : 'All Collections | VibeCulture'
-  const pageDesc = activeCatName
-    ? `Shop ${activeCatName} at VibeCulture. Premium men's clothing with fast delivery across India.`
-    : 'Browse all premium T-shirts, gym tank tops and jeans at VibeCulture. Filter by category, sort by price.'
+  const racks = useMemo(() => {
+    let list = withKind.filter(p =>
+      (rack === 'all' || p._kind === rack) &&
+      (!category || p.category._id === category) &&
+      (!showSearch || !search || p.name.toLowerCase().includes(search.toLowerCase())))
+    if (sortType === 'low-high') list = [...list].sort((a, b) => a.price - b.price)
+    else if (sortType === 'high-low') list = [...list].sort((a, b) => b.price - a.price)
+    else list = [...list].sort((a, b) => (b.date || 0) - (a.date || 0))
+    return Object.keys(RACKS)
+      .map(kind => ({ kind, ...RACKS[kind], products: list.filter(p => p._kind === kind) }))
+      .filter(r => r.products.length)
+  }, [withKind, rack, category, search, showSearch, sortType])
+
+  const total = racks.reduce((n, r) => n + r.products.length, 0)
+  const activeCategory = categories.find(c => c._id === category)
+  const heading = activeCategory?.name || (rack !== 'all' ? RACKS[rack].title : 'The whole wardrobe')
 
   return (
-    <div className='min-h-screen bg-gray-50 pt-6 pb-20 px-4 sm:px-6'>
+    <div className='min-h-screen bg-[#f5f2ed] pb-20'>
       <Helmet>
-        <title>{pageTitle}</title>
-        <meta name="description" content={pageDesc} />
+        <title>{`${heading} | VibeCulture`}</title>
+        <meta name="description" content={`Shop ${heading.toLowerCase()} at VibeCulture. Premium men's clothing with fast delivery across India.`} />
         <link rel="canonical" href="https://www.vibeculture.in/collection" />
       </Helmet>
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-        className='text-center py-10 border-b border-gray-200 mb-8'>
-        <Title text1={activeCatName ? activeCatName.toUpperCase() : 'ALL'} text2='COLLECTIONS' />
-        <p className='text-gray-400 text-sm mt-2'>{filterProducts.length} products</p>
-      </motion.div>
+      <div className='max-w-7xl mx-auto px-4 sm:px-10 pt-8 sm:pt-12'>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+          <p className='text-[10px] sm:text-xs tracking-[0.35em] uppercase text-gray-500 mb-2'>Shop · {total} pieces</p>
+          <h1 className='font-serif text-3xl sm:text-5xl font-light text-gray-900 leading-none'>{heading}</h1>
+        </motion.div>
 
-      <div className='flex flex-col lg:flex-row gap-8 max-w-7xl mx-auto'>
-
-        {/* Filter Sidebar */}
-        <div className='w-full lg:w-52 flex-shrink-0'>
-          <button onClick={() => setShowFilter(!showFilter)}
-            className='flex items-center gap-2 text-gray-900 text-xs tracking-widest uppercase font-semibold mb-4 lg:cursor-default'>
-            <span>⚙ Filters</span>
-            <img className={`h-2.5 lg:hidden transition-transform duration-300 ${showFilter ? 'rotate-90' : ''}`} src={assets.dropdown_icon} alt='' />
-          </button>
-
-          <div className={`${showFilter ? 'block' : 'hidden'} lg:block space-y-4`}>
-            <div className='bg-white rounded-2xl p-4 border border-gray-100 shadow-sm'>
-              <p className='text-gray-900 text-[10px] tracking-[0.25em] uppercase font-semibold mb-3'>Categories</p>
-              <div className='space-y-2'>
-                {categories.map(cat => (
-                  <label key={cat._id} className='flex items-center gap-2.5 cursor-pointer group'>
-                    <div onClick={() => {
-                      if (category.includes(cat._id)) { setCategory([]); setActiveCategory('') }
-                      else { setCategory([cat._id]); setActiveCategory(cat._id) }
-                    }}
-                      className={`w-4 h-4 rounded border flex items-center justify-center transition-all duration-200 ${
-                        category.includes(cat._id) ? 'bg-gray-900 border-gray-900' : 'border-gray-300 group-hover:border-gray-600'
-                      }`}>
-                      {category.includes(cat._id) && <span className='text-white text-[10px] font-black'>✓</span>}
-                    </div>
-                    <span className={`text-sm transition-colors duration-200 ${category.includes(cat._id) ? 'text-gray-900 font-medium' : 'text-gray-500 group-hover:text-gray-800'}`}>
-                      {cat.name}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {subCategories.length > 0 && (
-              <div className='bg-white rounded-2xl p-4 border border-gray-100 shadow-sm'>
-                <p className='text-gray-900 text-[10px] tracking-[0.25em] uppercase font-semibold mb-3'>Sub Categories</p>
-                <div className='space-y-2'>
-                  {subCategories.map(sub => (
-                    <label key={sub._id} className='flex items-center gap-2.5 cursor-pointer group'>
-                      <div onClick={() => {
-                        if (subCategory.includes(sub._id)) setSubCategory([])
-                        else setSubCategory([sub._id])
-                      }}
-                        className={`w-4 h-4 rounded border flex items-center justify-center transition-all duration-200 ${
-                          subCategory.includes(sub._id) ? 'bg-gray-900 border-gray-900' : 'border-gray-300 group-hover:border-gray-600'
-                        }`}>
-                        {subCategory.includes(sub._id) && <span className='text-white text-[10px] font-black'>✓</span>}
-                      </div>
-                      <span className={`text-sm transition-colors duration-200 ${subCategory.includes(sub._id) ? 'text-gray-900 font-medium' : 'text-gray-500 group-hover:text-gray-800'}`}>
-                        {sub.name}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
+        {/* rack + category + sort */}
+        <div className='mt-6 flex flex-col gap-3'>
+          <div className='flex gap-2 overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0'>
+            {[['all', 'All racks'], ...Object.entries(RACKS).map(([k, r]) => [k, r.title])].map(([key, label]) => (
+              <button key={key} onClick={() => setParam('rack', key === 'all' ? '' : key)}
+                className={`relative flex-shrink-0 px-5 py-2.5 rounded-full text-[11px] tracking-[0.2em] uppercase transition-colors ${rack === key ? 'text-white' : 'text-gray-600 hover:text-gray-900 bg-white/70 border border-gray-200'}`}>
+                {rack === key && <motion.span layoutId='collection-rack' className='absolute inset-0 rounded-full bg-gray-900' transition={{ type: 'spring', stiffness: 380, damping: 30 }} />}
+                <span className='relative'>{label}</span>
+              </button>
+            ))}
           </div>
-        </div>
-
-        {/* Products Grid */}
-        <div className='flex-1 min-w-0'>
-          <div className='flex justify-end mb-6'>
-            <select onChange={e => setSortType(e.target.value)}
-              className='bg-white text-gray-700 text-xs tracking-wider px-4 py-2.5 rounded-xl border border-gray-200 outline-none cursor-pointer shadow-sm hover:border-gray-400 transition-colors'>
-              <option value='relavent'>Sort: Relevant</option>
+          <div className='flex flex-wrap items-center gap-2'>
+            {categories.length > 1 && categories.map(c => (
+              <button key={c._id} onClick={() => setParam('category', category === c._id ? '' : c._id)}
+                className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${category === c._id ? 'bg-white border-gray-900 text-gray-900' : 'border-gray-300 text-gray-500 hover:text-gray-900'}`}>
+                {c.name}
+              </button>
+            ))}
+            <select value={sortType} onChange={e => setSortType(e.target.value)}
+              className='ml-auto bg-white text-gray-700 text-xs tracking-wider px-4 py-2.5 rounded-xl border border-gray-200 outline-none cursor-pointer'>
+              <option value='newest'>Newest first</option>
               <option value='low-high'>Price: Low → High</option>
               <option value='high-low'>Price: High → Low</option>
             </select>
           </div>
-
-          <AnimatePresence mode='wait'>
-            {filterProducts.length === 0 ? (
-              <motion.div key='empty' initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className='text-center py-24'>
-                <div className='text-6xl mb-4 float inline-block'>🔍</div>
-                <p className='text-gray-500 text-sm'>No products found. Try adjusting filters.</p>
-              </motion.div>
-            ) : (
-              <motion.div key='grid' initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 gap-y-8'>
-                {filterProducts.map((item, i) => (
-                  <ProductItem key={i} name={item.name} id={item._id} price={item.price} image={item.image} bestseller={item.bestseller} />
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       </div>
+
+      <AnimatePresence mode='wait'>
+        {racks.length === 0 ? (
+          <motion.p key='empty' initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className='text-center text-gray-500 text-sm py-24'>Nothing on this rack yet.</motion.p>
+        ) : (
+          <motion.div key={`${rack}-${category}-${sortType}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className='mt-6 flex flex-col gap-4'>
+            {racks.map(r => (
+              <section key={r.kind} className='relative'>
+                <div className='max-w-7xl mx-auto px-4 sm:px-10 flex items-baseline justify-between'>
+                  <h2 className='font-serif text-xl sm:text-2xl font-light text-gray-900'>{r.title}</h2>
+                  <span className='text-[10px] tracking-[0.3em] uppercase text-gray-500'>{r.products.length} pieces</span>
+                </div>
+                <HangerRail products={r.products} railId={`col-${r.kind}`} />
+              </section>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

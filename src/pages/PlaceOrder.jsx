@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useState } from 'react'
 import Title from '../components/Title'
 import CartTotal from '../components/CartTotal'
 import { assets } from '../assets/assets'
+import { markJustOrdered } from '../components/wardrobe/journey'
 import { ShopContext } from '../context/ShopContext'
 import axios from 'axios'
 import { toast } from 'react-toastify'
@@ -56,7 +57,7 @@ const PlaceOrder = () => {
         try {
           const { data } = await axios.post(backendUrl + '/api/order/verifyRazorpay',
             { ...response, userId: undefined }, { headers: { token } })
-          if (data.success) { navigate('/orders'); setCartItems({}) }
+          if (data.success) { markJustOrdered(); navigate('/orders'); setCartItems({}) }
           else toast.error(data.message)
         } catch (error) { toast.error(error.message) }
       },

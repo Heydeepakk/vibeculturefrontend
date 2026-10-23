@@ -105,8 +105,9 @@ const Navbar = () => {
               <img src={assets.cart_icon} className='w-5 opacity-60 hover:opacity-100 transition-opacity' alt='Cart' />
               <AnimatePresence>
                 {getCartCount() > 0 && (
-                  <motion.span key='badge'
-                    initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}
+                  <motion.span key={`badge-${getCartCount()}`}
+                    initial={{ scale: 0.4 }} animate={{ scale: [1.5, 0.9, 1] }} exit={{ scale: 0 }}
+                    transition={{ duration: 0.45 }}
                     className='absolute -top-0.5 -right-0.5 w-4 h-4 bg-gray-900 text-white rounded-full text-[9px] font-black flex items-center justify-center'>
                     {getCartCount()}
                   </motion.span>

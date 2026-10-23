@@ -1,8 +1,12 @@
-import React, { useContext, useEffect, useState } from 'react'
+import React, { useContext, useEffect, useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { useParams } from 'react-router-dom'
 import { ShopContext } from '../context/ShopContext'
-import RelatedProducts from '../components/RelatedProducts'
+import HangerRail from '../components/wardrobe/HangerRail'
+import GarmentViewer from '../components/wardrobe/GarmentViewer'
+import { garmentKind, RACKS } from '../components/wardrobe/cutout'
+import { rememberViewed } from '../components/wardrobe/journey'
+import FreeDeliveryBar from '../components/wardrobe/FreeDeliveryBar'
 import { toast } from 'react-toastify'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -10,13 +14,11 @@ const Product = () => {
   const { productId } = useParams()
   const { products, currency, addToCart } = useContext(ShopContext)
   const [productData, setProductData] = useState(false)
-  const [image, setImage] = useState('')
+  const [size, setSize] = useState('')
   const [selectedVariant, setSelectedVariant] = useState(null)
   const [availableVariants, setAvailableVariants] = useState([])
   const [selectedAttributes, setSelectedAttributes] = useState({})
   const [attributeOptions, setAttributeOptions] = useState([])
-  const [activeTab, setActiveTab] = useState('description')
-  const [wishlist, setWishlist] = useState(false)
   const [addedAnim, setAddedAnim] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -35,8 +37,9 @@ const Product = () => {
       i._id === productId || i.seo?.slug === productId
     )
     if (item) {
+      rememberViewed(item._id)
       setProductData(item)
-      setImage(item.image?.[0] || '')
+      setSize('')
       if (item.variants?.length > 0) {
         setAvailableVariants(item.variants)
         setupAttributeOptions(item.variants)
@@ -63,12 +66,20 @@ const Product = () => {
   }
 
   const hasVariants = availableVariants.length > 0
+  const sizes = hasVariants ? [] : (productData?.sizes || [])
+  const kind = productData ? garmentKind(productData.category) : 'tshirt'
+  const moreFromRack = useMemo(() => products
+    .filter(p => p._id !== productData?._id && typeof p.category === 'object' && p.category && garmentKind(p.category) === kind)
+    .map(p => ({ ...p, _kind: kind })), [products, productData, kind])
 
   const handleAddToCart = () => {
     if (hasVariants) {
       if (!selectedVariant) { toast.error('Please select all options'); return }
       if (selectedVariant.quantity === 0) { toast.error('Out of stock'); return }
       addToCart(productData._id, availableVariants.indexOf(selectedVariant).toString())
+    } else if (sizes.length) {
+      if (!size) { toast.error('Please choose a size'); return }
+      addToCart(productData._id, size)
     } else {
       addToCart(productData._id, '0')
     }
@@ -151,8 +162,7 @@ const Product = () => {
         returnMethod: 'https://schema.org/ReturnByMail',
         returnFees: 'https://schema.org/FreeReturn'
       }
-    },
-    aggregateRating: { '@type': 'AggregateRating', ratingValue: '4.5', reviewCount: '122' }
+    }
   }
 
   return (
@@ -187,34 +197,9 @@ const Product = () => {
       <div className='max-w-6xl mx-auto'>
         <div className='flex gap-8 lg:gap-16 flex-col lg:flex-row'>
 
-          {/* Images */}
-          <div className='flex-1 flex flex-col-reverse gap-3 sm:flex-row'>
-            <div className='flex sm:flex-col overflow-x-auto sm:overflow-y-scroll justify-between sm:justify-normal sm:w-[18%] w-full gap-2'>
-              {productData.image.map((img, i) => (
-                <motion.div key={i} whileHover={{ scale: 1.05 }} onClick={() => setImage(img)}
-                  className={`flex-shrink-0 w-[22%] sm:w-full sm:mb-2 rounded-xl overflow-hidden cursor-pointer border-2 transition-all duration-300 ${image === img ? 'border-gray-900' : 'border-transparent hover:border-gray-300'}`}>
-                  <img src={img} alt='' className='w-full aspect-square object-cover' />
-                </motion.div>
-              ))}
-            </div>
-
-            <div className='w-full sm:w-[80%] relative'>
-              <AnimatePresence mode='wait'>
-                <motion.img key={image}
-                  initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
-                  transition={{ duration: 0.25 }}
-                  src={image} alt={productData.name}
-                  className='w-full rounded-2xl object-contain max-h-[520px] bg-white border border-gray-200 shadow-sm'
-                />
-              </AnimatePresence>
-
-              <motion.button whileTap={{ scale: 0.9 }} onClick={() => setWishlist(!wishlist)}
-                className='absolute top-4 right-4 w-10 h-10 bg-white rounded-full flex items-center justify-center border border-gray-200 hover:border-gray-400 transition-all duration-300 shadow-sm'>
-                <motion.span animate={{ scale: wishlist ? [1, 1.5, 1] : 1 }} className='text-lg'>
-                  {wishlist ? '❤️' : '🤍'}
-                </motion.span>
-              </motion.button>
-            </div>
+          {/* The garment on its hanger: drag to turn, Front / Back */}
+          <div className='flex-1 bg-[#f5f2ed] rounded-3xl px-6 pt-10 pb-6 overflow-hidden'>
+            <GarmentViewer key={productData._id} product={productData} kind={kind} className='w-[min(78%,380px)]' />
           </div>
 
           {/* Product Info */}
@@ -228,15 +213,7 @@ const Product = () => {
             <h1 className='font-serif text-3xl sm:text-4xl font-light text-gray-900 leading-tight mb-3 italic'>
               {productData.name}
             </h1>
-
-            <div className='flex items-center gap-2 mb-5'>
-              <div className='flex gap-0.5'>
-                {[...Array(5)].map((_, i) => (
-                  <span key={i} className={`text-sm ${i < 4 ? 'text-amber-400' : 'text-gray-300'}`}>★</span>
-                ))}
-              </div>
-              <span className='text-gray-400 text-xs'>(122 reviews)</span>
-            </div>
+            <p className='text-gray-500 text-xs tracking-widest uppercase mb-5'>Hangs on the {RACKS[kind].title} rack</p>
 
             <div className='flex items-baseline gap-3 mb-6 pb-6 border-b border-gray-200'>
               <span className='font-serif text-4xl font-bold text-gray-900'>{currency}{currentPrice}</span>
@@ -270,6 +247,20 @@ const Product = () => {
               </div>
             )}
 
+            {sizes.length > 0 && (
+              <div className='mb-7'>
+                <p className='text-gray-500 text-xs tracking-widest uppercase mb-3'>Size{size && <span className='text-gray-900 ml-2'>{size}</span>}</p>
+                <div className='flex flex-wrap gap-2'>
+                  {sizes.map(s => (
+                    <motion.button key={s} whileTap={{ scale: 0.95 }} onClick={() => setSize(s)}
+                      className={`min-w-[52px] px-4 py-2 rounded-xl text-sm transition-all duration-300 border ${size === s ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-500 hover:text-gray-900'}`}>
+                      {s}
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <motion.button
               onClick={handleAddToCart}
               disabled={hasVariants ? (!selectedVariant || selectedVariant?.quantity === 0) : false}
@@ -279,17 +270,15 @@ const Product = () => {
               {addedAnim ? '✓ Added to Cart!' : (hasVariants && selectedVariant?.quantity === 0) ? 'Out of Stock' : '🛒 Add to Cart'}
             </motion.button>
 
+            <FreeDeliveryBar className='mb-5' />
+
             <div className='flex gap-2'>
-              <button onClick={() => setWishlist(!wishlist)}
-                className='flex-1 bg-white text-gray-600 hover:text-gray-900 py-3.5 rounded-2xl text-sm tracking-widest uppercase border border-gray-200 hover:border-gray-400 transition-all duration-300'>
-                {wishlist ? '❤️ Wishlisted' : '♡ Wishlist'}
-              </button>
               <motion.button whileTap={{ scale: 0.95 }} onClick={handleWhatsApp} title='Share on WhatsApp'
-                className='w-14 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-2xl flex items-center justify-center transition-colors duration-300'>
+                className='flex-1 h-12 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-2xl flex items-center justify-center transition-colors duration-300'>
                 <svg viewBox='0 0 24 24' className='w-5 h-5 fill-white'><path d='M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z'/></svg>
               </motion.button>
               <motion.button whileTap={{ scale: 0.95 }} onClick={handleShare} title='Copy link'
-                className='w-14 bg-white hover:bg-gray-50 text-gray-600 rounded-2xl flex items-center justify-center border border-gray-200 hover:border-gray-400 transition-all duration-300'>
+                className='flex-1 h-12 bg-white hover:bg-gray-50 text-gray-600 rounded-2xl flex items-center justify-center border border-gray-200 hover:border-gray-400 transition-all duration-300'>
                 {copied
                   ? <svg viewBox='0 0 24 24' className='w-5 h-5 stroke-green-500 fill-none' strokeWidth='2.5'><polyline points='20 6 9 17 4 12'/></svg>
                   : <svg viewBox='0 0 24 24' className='w-5 h-5 stroke-gray-600 fill-none' strokeWidth='2'><path d='M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8'/><polyline points='16 6 12 2 8 6'/><line x1='12' y1='2' x2='12' y2='15'/></svg>
@@ -308,49 +297,21 @@ const Product = () => {
           </motion.div>
         </div>
 
-        {/* Tabs */}
-        <div className='mt-16'>
-          <div className='flex gap-1 border-b border-gray-200'>
-            {['description', 'reviews'].map(tab => (
-              <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`px-6 py-3 text-xs tracking-widest uppercase transition-all duration-300 rounded-t-xl ${
-                  activeTab === tab
-                    ? 'bg-gray-900 text-white'
-                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                }`}>
-                {tab === 'reviews' ? 'Reviews (122)' : 'Description'}
-              </button>
-            ))}
+        {productData.description && (
+          <div className='mt-14 bg-white rounded-2xl p-6 border border-gray-200 shadow-sm'>
+            <p className='text-xs tracking-widest uppercase text-gray-900 font-semibold mb-3'>Description</p>
+            {/<[a-z][\s\S]*>/i.test(productData.description)
+              ? <div className='text-gray-600 text-sm leading-relaxed font-light' dangerouslySetInnerHTML={{ __html: productData.description }} />
+              : <p className='text-gray-600 text-sm leading-relaxed font-light whitespace-pre-line'>{productData.description}</p>}
           </div>
+        )}
 
-          <div className='bg-white rounded-b-2xl rounded-tr-2xl p-6 border border-gray-200 border-t-0 shadow-sm'>
-            {activeTab === 'description' ? (
-              <div className='text-gray-600 text-sm leading-relaxed font-light'
-                dangerouslySetInnerHTML={{ __html: productData.description || 'No description available.' }} />
-            ) : (
-              <div className='space-y-4'>
-                {[['Priya S.', 5, 'Amazing quality! Exactly as described. The fabric is so soft and thick. Will buy again.'],
-                  ['Rahul M.', 4, 'Great product, fast delivery. The fit is perfect. Very happy with my purchase.'],
-                  ['Anita K.', 5, 'Love it! The 240 GSM fabric is premium quality. Totally worth the price.']
-                ].map(([name, stars, review]) => (
-                  <div key={name} className='bg-gray-50 rounded-xl p-4 border border-gray-100'>
-                    <div className='flex items-center gap-2 mb-2'>
-                      <span className='text-gray-900 text-sm font-medium'>{name}</span>
-                      <div className='flex gap-0.5'>
-                        {[...Array(5)].map((_, i) => (
-                          <span key={i} className={`text-xs ${i < stars ? 'text-amber-400' : 'text-gray-300'}`}>★</span>
-                        ))}
-                      </div>
-                    </div>
-                    <p className='text-gray-500 text-sm font-light'>{review}</p>
-                  </div>
-                ))}
-              </div>
-            )}
+        {moreFromRack.length > 0 && (
+          <div className='mt-16 -mx-4 sm:-mx-6 bg-[#f5f2ed] pt-8 rounded-3xl'>
+            <h2 className='px-6 sm:px-10 font-serif text-2xl font-light text-gray-900'>More from the {RACKS[kind].title} rack</h2>
+            <HangerRail products={moreFromRack} railId='related' />
           </div>
-        </div>
-
-        <RelatedProducts category={productData.category} subCategory={productData.subCategory} />
+        )}
       </div>
     </motion.div>
   )
