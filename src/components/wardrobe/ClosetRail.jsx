@@ -1,10 +1,11 @@
-import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence, animate, useAnimationFrame, useMotionValue, useMotionValueEvent, useSpring, useTransform, useVelocity } from 'framer-motion'
 import { toast } from 'react-toastify'
 import { ShopContext } from '../../context/ShopContext'
 import Garment3D, { garmentHeight } from './Garment3D'
 import useClothPhysics from './useClothPhysics'
 import { buzz } from './haptics'
+import { LITE } from './perf'
 
 const SLOT = 0.3     // spacing between packed garments, × garment width
 const SPREAD = 0.45  // how far neighbours slide aside when one is pulled out
@@ -17,7 +18,7 @@ export const railMetrics = (count, gw, pad = gw * 0.7) => {
   return { slotW, spread, pad, width: pad * 2 + spread * 2 + count * slotW }
 }
 
-const ClosetSlot = ({ product, index, state, flipped, gw, slotW, spread, left, height, railSample, inView, railId, currency, touch, handlers }) => {
+const ClosetSlot = memo(({ product, index, state, flipped, gw, slotW, spread, left, height, railSample, inView, railId, currency, touch, handlers }) => {
   const active = state === 'active'
   const [seen, setSeen] = useState(false) // once pulled out, keep the back image loaded
   useEffect(() => { if (active) setSeen(true) }, [active])
@@ -28,16 +29,22 @@ const ClosetSlot = ({ product, index, state, flipped, gw, slotW, spread, left, h
   useEffect(() => { turn.set(targetRot) }, [targetRot, turn])
   useEffect(() => { z.set(active ? gw * PULL : 0) }, [active, gw, z])
 
-  // breeze, rail drag, bumps: a real pendulum per garment (calmer while held out)
-  const cloth = useClothPhysics({ index, railSample, enabled: inView, calm: active })
+  // breeze, rail drag, bumps: a real pendulum per garment (calmer while held out), only while it is on screen
+  const garmentRef = useRef(null)
+  const visible = useRef(true)
+  useEffect(() => handlers.watch(garmentRef.current, visible), [handlers])
+  const cloth = useClothPhysics({ index, railSample, enabled: inView, calm: active, visibleRef: visible })
   // Changing a garment's 3D shape every frame is costly with ~20 on screen, so on the packed rail the hem lag
   // and twist are drawn as cheap 2D skew / width change of the flattened garment; the pulled-out one gets them in 3D.
   const activeRef = useRef(active)
   activeRef.current = active
   const rotateY = useTransform([turn, cloth.twist], ([r, t]) => r + (activeRef.current ? t * 0.3 : 0))
-  const railSkew = useTransform(cloth.flex, f => (activeRef.current ? 0 : f * 0.4))
-  const railTwist = useTransform(cloth.twist, t => (activeRef.current ? 1
+  // (phones keep just the swing: two fewer style writes per garment per frame)
+  const skew = useTransform(cloth.flex, f => (activeRef.current ? 0 : f * 0.4))
+  const twistScale = useTransform(cloth.twist, t => (activeRef.current ? 1
     : Math.cos(((idleAngle + t) * Math.PI) / 180) / Math.cos((idleAngle * Math.PI) / 180)))
+  const railSkew = LITE ? 0 : skew
+  const railTwist = LITE ? 1 : twistScale
   useEffect(() => handlers.register(index, cloth.kick), [index, cloth.kick, handlers])
 
   // pulled toward you, the hem lags behind and swings back
@@ -52,6 +59,7 @@ const ClosetSlot = ({ product, index, state, flipped, gw, slotW, spread, left, h
     <div className='absolute top-0' style={{ left, width: slotW, height, zIndex: active ? 500 : index + 1 }}>
       {/* the garment itself (visual only on desktop; the slot below is the hover target) */}
       <motion.div
+        ref={garmentRef}
         className='absolute top-0'
         style={{ left: slotW / 2 - gw / 2, width: gw, pointerEvents: active && touch ? 'auto' : 'none' }}
         initial={{ opacity: 0, y: -40 }}
@@ -93,7 +101,8 @@ const ClosetSlot = ({ product, index, state, flipped, gw, slotW, spread, left, h
       </AnimatePresence>
     </div>
   )
-}
+})
+ClosetSlot.displayName = 'ClosetSlot'
 
 // Name, price, Front/Back, and a quick "add to bag" with sizes, under the pulled-out garment.
 const PulledCaption = ({ product, currency, flipped, touch, handlers, style }) => {
@@ -248,8 +257,22 @@ const ClosetRail = ({ products, gw, position, invert = false, railId, currency, 
     return h[0]
   }, [])
 
+  // one observer for every garment on the rail: each simulates only while it is actually on screen
+  const watched = useRef(new Map())
+  const slotIO = useRef(null)
+  const watch = useCallback((el, flag) => {
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    slotIO.current ||= new IntersectionObserver(entries => entries.forEach(e => {
+      const f = watched.current.get(e.target)
+      if (f) f.current = e.isIntersecting
+    }), { rootMargin: '40px' })
+    watched.current.set(el, flag)
+    slotIO.current.observe(el)
+    return () => { slotIO.current?.unobserve(el); watched.current.delete(el) }
+  }, [])
+
   useEffect(() => { setActiveIndex(-1) }, [products])
-  useEffect(() => () => { clearTimeout(hoverTimer.current); clearTimeout(leaveTimer.current) }, [])
+  useEffect(() => () => { clearTimeout(hoverTimer.current); clearTimeout(leaveTimer.current); slotIO.current?.disconnect() }, [])
 
   const handlers = useMemo(() => ({
     pointerDown: e => { touchRef.current = e.pointerType !== 'mouse'; setTouch(touchRef.current) },
@@ -257,6 +280,7 @@ const ClosetRail = ({ products, gw, position, invert = false, railId, currency, 
     unhover: () => clearTimeout(hoverTimer.current),
     brush: (i, dir) => bump(i, -26 * dir, 1),
     register: (i, kick) => { kicks.current[i] = kick; return () => { if (kicks.current[i] === kick) kicks.current[i] = null } },
+    watch,
     activate,
     tap: (i, product) => {
       if (touchRef.current && i !== activeIndexRef.current) activate(i)
@@ -264,7 +288,7 @@ const ClosetRail = ({ products, gw, position, invert = false, railId, currency, 
     },
     flip: v => setFlipped(v),
     open: p => onOpen(p),
-  }), [activate, bump, onOpen])
+  }), [activate, bump, onOpen, watch])
 
   const stateOf = i => (activeIndex < 0 ? 'idle' : i === activeIndex ? 'active' : i < activeIndex ? 'left' : 'right')
 
@@ -285,7 +309,7 @@ const ClosetRail = ({ products, gw, position, invert = false, railId, currency, 
       <span className='wardrobe-bracket left-2' style={{ height: gw * 0.05 + 10 }} />
       <span className='wardrobe-bracket right-2' style={{ height: gw * 0.05 + 10 }} />
       {products.map((p, i) => (
-        <ClosetSlot key={`${railId}-${p._id}`} product={p} index={i} state={stateOf(i)} flipped={flipped}
+        <ClosetSlot key={`${railId}-${p._id}`} product={p} index={i} state={stateOf(i)} flipped={i === activeIndex && flipped}
           gw={gw} slotW={slotW} spread={spread} left={pad + spread + i * slotW} height={height}
           railSample={railSample} inView={inView} railId={railId} currency={currency} touch={touch} handlers={handlers} />
       ))}

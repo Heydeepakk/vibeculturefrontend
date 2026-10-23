@@ -9,6 +9,7 @@ import FreeDeliveryBar from './FreeDeliveryBar'
 import { rememberViewed } from './journey'
 import { buzz } from './haptics'
 import { getCutout } from './cutout'
+import { LITE, pushOverlay } from './perf'
 
 // The fitting room: the garment comes off the rail, turns to face you and can be spun to see the back.
 const FittingRoom = ({ item, onClose }) => {
@@ -40,6 +41,8 @@ const FittingRoom = ({ item, onClose }) => {
   const description = String(product.description || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
 
   useEffect(() => { rememberViewed(product._id) }, [product._id])
+  // the racks behind stop animating while this is open
+  useEffect(() => pushOverlay(), [])
 
   useEffect(() => {
     const onKey = e => e.key === 'Escape' && onClose()
@@ -76,7 +79,8 @@ const FittingRoom = ({ item, onClose }) => {
 
   return createPortal(
     <>
-      <motion.div className='fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm'
+      {/* a live blur of the page behind costs a full-screen re-blur per frame on phones */}
+      <motion.div className={`fixed inset-0 z-[60] ${LITE ? 'bg-black/50' : 'bg-black/40 backdrop-blur-sm'}`}
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
 
       <div className='fixed inset-0 z-[61] flex items-end sm:items-center justify-center sm:p-6 pointer-events-none'>

@@ -1,8 +1,9 @@
-import React, { useId, useMemo } from 'react'
+import React, { memo, useId, useMemo } from 'react'
 import { motion, motionValue, useTransform } from 'framer-motion'
 import Hanger from './Hanger'
 import ClothFilter from './ClothFilter'
 import { useCutout } from './cutout'
+import { LITE } from './perf'
 
 // Geometry relative to the garment width W (the hanger SVG is W wide and W/2 tall):
 //  top    – where the cloth starts below the hanger's top (collar on the shoulders / waistband in the clips)
@@ -26,13 +27,17 @@ const fitRect = (aspect, W, H) => (aspect > W / H
 // Generated sides: a chain of strips running from one outline point to the next (down the sleeve, under
 // the arm, along the body), each tilted to the outline's slope, textured with the fabric colour wrapped
 // round, and clipped to follow the hem taper.
+// On phones: half as many strips and fixed shading, since re-filtering dozens of clipped strips every frame
+// of a turn is what made the 360 view stutter.
+const SIDE_STEP = LITE ? 2 : 1
 const AutoSides = ({ res, fit, depth, taper, rotateY }) => {
-  const filter = useTransform(rotateY, r => `brightness(${0.78 + 0.22 * Math.abs(Math.sin((r * Math.PI) / 180))})`)
+  const animated = useTransform(rotateY, r => `brightness(${0.78 + 0.22 * Math.abs(Math.sin((r * Math.PI) / 180))})`)
+  const filter = LITE ? 'brightness(0.9)' : animated
   const depthAt = y => depth * (1 - (taper * y) / fit.h)
   const pts = res.outline
   const strips = []
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i], b = pts[i + 1]
+  for (let i = 0; i < pts.length - 1; i += SIDE_STEP) {
+    const a = pts[i], b = pts[Math.min(i + SIDE_STEP, pts.length - 1)]
     if (!a || !b) continue
     const y0 = a.y * fit.h, y1 = b.y * fit.h
     const dy = Math.max(0.5, y1 - y0)
@@ -42,17 +47,18 @@ const AutoSides = ({ res, fit, depth, taper, rotateY }) => {
       const dx = x1 - x0
       const len = Math.hypot(dx, dy) + 0.8 // overlap a hair so strips don't show seams
       const stretch = len / dy
-      const wt = depthAt(y0) / depth, wb = depthAt(y1) / depth
-      const clip = `polygon(${(1 - wt) * 50}% 0, ${(1 + wt) * 50}% 0, ${(1 + wb) * 50}% 100%, ${(1 - wb) * 50}% 100%)`
+      // the hem taper: each strip is short, so its average width stands in for a trapezoid
+      // (a clip-path inside a 3D scene costs a masked render pass per strip per frame — 10× slower to turn)
+      const sw = (depthAt(y0) + depthAt(y1)) / 2
       strips.push(
         <motion.div key={`${side}-${i}`} aria-hidden='true' style={{
-          position: 'absolute', top: y0, left: x0 - depth / 2, width: depth, height: len,
+          position: 'absolute', top: y0, left: x0 - sw / 2, width: sw, height: len,
           transformOrigin: '50% 0%',
           transform: `rotateZ(${-Math.atan2(dx, dy)}rad) rotateY(${side === 'left' ? -90 : 90}deg)`,
           backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
           backgroundImage: `url(${res.sideTex[side]})`,
-          backgroundSize: `${depth}px ${fit.h * stretch}px`, backgroundPositionY: -y0 * stretch,
-          clipPath: clip, WebkitClipPath: clip, filter,
+          backgroundSize: `${sw}px ${fit.h * stretch}px`, backgroundPositionY: -y0 * stretch,
+          filter,
         }} />
       )
     }
@@ -63,7 +69,8 @@ const AutoSides = ({ res, fit, depth, taper, rotateY }) => {
 // A real side photo (left or right), standing on the garment's edge. Seen from the front it is edge-on and invisible.
 const SidePanel = ({ res, side, mirrored, x, top, depth, height, rotateY }) => {
   // brightest when it faces you, a little darker as it turns away
-  const filter = useTransform(rotateY, r => `brightness(${0.8 + 0.2 * Math.abs(Math.sin((r * Math.PI) / 180))})`)
+  const animated = useTransform(rotateY, r => `brightness(${0.8 + 0.2 * Math.abs(Math.sin((r * Math.PI) / 180))})`)
+  const filter = LITE ? 'brightness(0.9)' : animated
   return (
     <div style={{
       position: 'absolute', left: x - depth / 2, top, width: depth, height,
@@ -86,8 +93,9 @@ const faceStyle = transform => ({
 })
 
 const Face = ({ res, back, mirrored, shade, alt, cloth }) => {
+  // drop-shadow has to be re-rasterised whenever the filter changes, so phones go without it
   const filter = useTransform(shade, s =>
-    `${cloth ? `url(#${cloth}) ` : ''}brightness(${(1 - s) * (mirrored ? 0.9 : 1)}) drop-shadow(0 16px 14px rgba(0,0,0,${res?.cut ? 0.16 : 0.08}))`)
+    `${cloth ? `url(#${cloth}) ` : ''}brightness(${((1 - s) * (mirrored ? 0.9 : 1)).toFixed(3)})${LITE ? '' : ` drop-shadow(0 16px 14px rgba(0,0,0,${res?.cut ? 0.16 : 0.08}))`}`)
   if (!res) return null
   return (
     <motion.img
@@ -124,15 +132,16 @@ const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, f
   const geo = CLOTH[kind] || CLOTH.tshirt
   const H = geo.height * W
   const isCut = frontRes?.cut !== false
-  // only cut-out photos are fabric; a plain product photo with a background stays flat
-  const soft = isCut && frontRes ? clothId : null
+  // only cut-out photos are fabric; a plain product photo with a background stays flat.
+  // The fabric filter (noise, lighting, displacement redrawn every frame) is far too heavy for phones.
+  const soft = !LITE && isCut && frontRes ? clothId : null
   const frontFit = frontRes?.aspect ? fitRect(frontRes.aspect, W, H) : { x: 0, w: W, h: H }
   const sideRes = leftRes?.aspect ? leftRes : rightRes?.aspect ? rightRes : null
   // with a side photo, the garment is exactly as thick as the photo shows it
   const depth = sideRes
     ? Math.min(Math.max(frontFit.h * sideRes.aspect, 0.03 * W), 0.55 * W)
     : (isCut ? geo.depth : 0.012) * W
-  const coreCount = isCut ? layers : 2
+  const coreCount = isCut ? (LITE ? Math.max(2, Math.ceil(layers * 0.6)) : layers) : 2
   // detailed views (pulled out / fitting room) get generated sides when no side photo was uploaded
   const autoSides = !sideRes && isCut && layers > 5 && frontRes?.outline && frontRes?.sideTex
   // faces lean in toward the hem so the garment is thinner at the bottom, matching the side taper
@@ -194,12 +203,16 @@ const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, f
         <div style={faceStyle(`translateZ(${depth / 2 + 0.5}px) rotateX(${-lean}deg)`)}>
           <Face res={frontRes} shade={shade} alt={product.name} cloth={soft} />
         </div>
-        <div style={faceStyle(`rotateY(180deg) translateZ(${depth / 2 + 0.5}px) rotateX(${-lean}deg)`)}>
-          <Face res={back} mirrored={!backRes} shade={shade} alt={`${product.name} back`} cloth={soft} />
-        </div>
+        {/* a packed garment on a phone never turns far enough to show its back: one layer fewer each */}
+        {(!LITE || showBack) && (
+          <div style={faceStyle(`rotateY(180deg) translateZ(${depth / 2 + 0.5}px) rotateX(${-lean}deg)`)}>
+            <Face res={back} mirrored={!backRes} shade={shade} alt={`${product.name} back`} cloth={soft} />
+          </div>
+        )}
       </motion.div>
     </motion.div>
   )
 }
 
-export default Garment3D
+// memo: pulling one garment out re-renders every slot on the rail, but only that one garment changes
+export default memo(Garment3D)

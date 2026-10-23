@@ -104,7 +104,6 @@ const RackSection = ({ rack, index, onOpen }) => {
   const scrolledX = useTransform(smoothProgress, p => -p * distance)
   const still = useMotionValue(0)
   const x = pinned ? scrolledX : still
-  const progressWidth = useTransform(smoothProgress, p => `${p * 100}%`)
 
   return (
     <section id={`rack-${rack.kind}`} ref={sectionRef} className='relative scroll-mt-20'
@@ -129,13 +128,13 @@ const RackSection = ({ rack, index, onOpen }) => {
         <div ref={viewportRef} className={`relative z-10 ${pinned ? 'flex-1 min-h-0' : ''} mt-4 sm:mt-6 flex flex-col justify-center`}>
           <div className='absolute inset-x-0 top-[12%] bottom-[18%] bg-gradient-to-b from-black/[0.035] via-transparent to-transparent pointer-events-none' />
           <ClosetRail products={rack.products} gw={gw} position={x} railId={`home-${rack.kind}`} currency={currency}
-            onOpen={onOpen} style={{ x }} />
+            onOpen={onOpen} style={{ x, willChange: pinned ? 'transform' : undefined }} />
         </div>
 
         {pinned && (
           <div className='relative z-10 px-6 sm:px-10 pb-6 sm:pb-8 max-w-7xl w-full mx-auto flex items-center gap-6'>
             <div className='flex-1 h-px bg-gray-300 relative overflow-hidden'>
-              <motion.div className='absolute inset-y-0 left-0 bg-gray-900' style={{ width: progressWidth }} />
+              <motion.div className='absolute inset-0 bg-gray-900' style={{ scaleX: smoothProgress, originX: 0 }} />
             </div>
             <p className='text-[10px] tracking-[0.3em] uppercase text-gray-500 whitespace-nowrap'>Scroll to browse →</p>
           </div>

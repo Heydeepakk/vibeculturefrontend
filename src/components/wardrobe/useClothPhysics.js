@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react'
 import { useAnimationFrame, useMotionValue, useReducedMotion } from 'framer-motion'
 import { cutoutsBusy } from './cutout'
+import { overlayOpen } from './perf'
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
 
@@ -25,7 +26,9 @@ const RAD = Math.PI / 180
 
 // `railSample(delaySeconds)` returns the rail's { v, a } (px/s, px/s²) a moment ago; each garment reads
 // it a little later than its neighbour, so a shove travels down the rail like real hangers knocking on.
-const useClothPhysics = ({ index = 0, railSample, enabled = true, calm = false, strength = 1 } = {}) => {
+// `visibleRef` (optional) lets the caller switch one garment off while it is off screen.
+// `foreground` keeps it running while the fitting room covers the page (everything else pauses).
+const useClothPhysics = ({ index = 0, railSample, enabled = true, calm = false, strength = 1, visibleRef, foreground = false } = {}) => {
   const reduce = useReducedMotion()
   const swing = useMotionValue(0)
   const twist = useMotionValue(0)
@@ -33,8 +36,8 @@ const useClothPhysics = ({ index = 0, railSample, enabled = true, calm = false, 
   const phase = useMotionValue(index * 1.7)
   const ruffle = useMotionValue(0)
   const s = useRef({ a: 0, w: 0, tw: 0, tv: 0, f: 0, fv: 0, ph: index * 1.7, r: 0, asleep: false })
-  const live = useRef({ enabled, calm, strength })
-  live.current = { enabled, calm, strength }
+  const live = useRef({ enabled, calm, strength, foreground })
+  live.current = { enabled, calm, strength, foreground }
 
   // each garment has its own length/weight, so they never move in lockstep
   const k = 13 + (index % 5) * 1.7
@@ -43,8 +46,8 @@ const useClothPhysics = ({ index = 0, railSample, enabled = true, calm = false, 
   const hand = index % 2 ? 1 : -1
 
   useAnimationFrame((time, delta) => {
-    const { enabled: on, calm: still, strength: power } = live.current
-    if (reduce || !on || cutoutsBusy()) return
+    const { enabled: on, calm: still, strength: power, foreground: front } = live.current
+    if (reduce || !on || cutoutsBusy() || (visibleRef && !visibleRef.current) || (!front && overlayOpen())) return
     const dt = Math.min(delta, 48) / 1000
     const t = time / 1000 - lag
     const st = s.current

@@ -1,15 +1,17 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence, useMotionValue, useSpring, useMotionTemplate } from 'framer-motion'
 import useClothPhysics from './useClothPhysics'
+import { LITE } from './perf'
 
 // One letter hanging from its word's little rail on a string and a clip, swinging in the same breeze as the clothes.
-const HangingLetter = ({ char, index, bold }) => {
-  const cloth = useClothPhysics({ index: index * 3 + 1, strength: 1.4 })
+const HangingLetter = ({ char, index, bold, visibleRef }) => {
+  const cloth = useClothPhysics({ index: index * 3 + 1, strength: 1.4, visibleRef })
   const stringLen = 10 + ((index * 37) % 5) * 4
   return (
     <motion.span
       className='inline-flex flex-col items-center cursor-grab select-none'
-      style={{ rotate: cloth.swing, transformOrigin: '50% 0%' }}
+      // own layer, so swinging moves the letter on the GPU instead of repainting the glyph every frame
+      style={{ rotate: cloth.swing, transformOrigin: '50% 0%', willChange: 'transform' }}
       initial={{ y: -160, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 140, damping: 9, delay: 0.15 + index * 0.06 }}
@@ -34,7 +36,18 @@ const HeroHeadline = ({ racks }) => {
     return () => clearInterval(t)
   }, [])
 
-  // soft spotlight that follows the pointer
+  // letters stop swinging once the headline is scrolled away
+  const rootRef = useRef(null)
+  const visible = useRef(true)
+  useEffect(() => {
+    const el = rootRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(([e]) => { visible.current = e.isIntersecting })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+
+  // soft spotlight that follows the pointer (desktop only: there is no hovering pointer on a phone)
   const mx = useSpring(useMotionValue(50), { stiffness: 60, damping: 20 })
   const my = useSpring(useMotionValue(30), { stiffness: 60, damping: 20 })
   const spotlight = useMotionTemplate`radial-gradient(600px circle at ${mx}% ${my}%, rgba(255,255,255,0.9), rgba(255,255,255,0) 70%)`
@@ -48,8 +61,8 @@ const HeroHeadline = ({ racks }) => {
   let n = 0
 
   return (
-    <div className='relative overflow-hidden' onPointerMove={onMove}>
-      <motion.div className='absolute inset-0 pointer-events-none' style={{ background: spotlight }} />
+    <div ref={rootRef} className='relative overflow-hidden' onPointerMove={LITE ? undefined : onMove}>
+      {!LITE && <motion.div className='absolute inset-0 pointer-events-none' style={{ background: spotlight }} />}
 
       <div className='relative px-6 sm:px-10 pt-10 sm:pt-14 pb-6 max-w-7xl mx-auto'>
         <motion.p initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -63,7 +76,7 @@ const HeroHeadline = ({ racks }) => {
               {/* each word's own little rail */}
               <motion.span className='wardrobe-rod absolute -left-2 -right-2 top-0 !h-1.5'
                 initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: 0.5, delay: wi * 0.08 }} style={{ originX: 0 }} />
-              {[...w.text].map(ch => <HangingLetter key={n} char={ch} index={n++} bold={w.bold} />)}
+              {[...w.text].map(ch => <HangingLetter key={n} char={ch} index={n++} bold={w.bold} visibleRef={visible} />)}
             </span>
           ))}
         </h1>
