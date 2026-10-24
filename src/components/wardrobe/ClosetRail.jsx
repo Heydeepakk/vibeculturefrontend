@@ -39,8 +39,9 @@ const ClosetSlot = memo(({ product, index, state, flipped, gw, slotW, spread, le
   const activeRef = useRef(active)
   activeRef.current = active
   const rotateY = useTransform([turn, cloth.twist], ([r, t]) => r + (activeRef.current ? t * 0.3 : 0))
-  // (phones keep just the swing: two fewer style writes per garment per frame)
-  const skew = useTransform(cloth.flex, f => (activeRef.current ? 0 : f * 0.4))
+  // on the packed rail: swing rotates the whole garment from the hook; skewX adds hem lag
+  // keep skew small so it doesn't distort the silhouette
+  const skew = useTransform(cloth.flex, f => (activeRef.current ? 0 : f * 0.3))
   const twistScale = useTransform(cloth.twist, t => (activeRef.current ? 1
     : Math.cos(((idleAngle + t) * Math.PI) / 180) / Math.cos((idleAngle * Math.PI) / 180)))
   const railSkew = LITE ? 0 : skew
@@ -70,7 +71,7 @@ const ClosetSlot = memo(({ product, index, state, flipped, gw, slotW, spread, le
         <motion.div style={{ rotate: cloth.swing, skewX: railSkew, scaleX: railTwist, transformOrigin: '50% 5%' }}>
           <Garment3D product={product} kind={product._kind} width={gw} rotateY={rotateY} rotateX={tilt} flex={active ? cloth.flex : 0}
             drape={cloth.flex} phase={cloth.phase} ruffle={cloth.ruffle}
-            z={z} showBack={seen} layers={active ? 9 : 3} />
+            z={z} showBack={seen} layers={active ? 9 : 5} />
         </motion.div>
       </motion.div>
 

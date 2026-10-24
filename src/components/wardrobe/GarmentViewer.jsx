@@ -14,7 +14,7 @@ const GarmentViewer = forwardRef(({ product, kind = 'tshirt', className = 'w-[mi
   const hasBack = (product.image || []).length > 1
   // same breeze as the rack, a little gentler indoors; keeps moving while the fitting room covers the page
   const visible = useRef(true)
-  const cloth = useClothPhysics({ index: 3, strength: 0.6, foreground: true, visibleRef: visible })
+  const cloth = useClothPhysics({ index: 3, strength: 1.0, foreground: true, visibleRef: visible })
   const shown = useTransform([rotateY, cloth.twist], ([r, t]) => r + t * 0.5)
 
   useEffect(() => {
@@ -58,8 +58,10 @@ const GarmentViewer = forwardRef(({ product, kind = 'tshirt', className = 'w-[mi
         onPanEnd={(e, info) => { cloth.kick(Math.max(-60, Math.min(60, info.velocity.x * 0.04))); settle() }}
       >
         {stageW > 0 && <div className='wardrobe-rod absolute -left-[60%] -right-[60%]' style={{ top: stageW * 0.05 - 4 }} />}
-        <motion.div style={{ rotate: cloth.swing, transformOrigin: '50% 5%' }}>
-          {stageW > 0 && <Garment3D product={product} kind={kind} width={stageW} rotateY={shown} flex={cloth.flex} phase={cloth.phase} ruffle={cloth.ruffle} perspective={1400} layers={layers} />}
+        <motion.div style={{ rotate: cloth.swing, transformOrigin: '50% 3%' }}>
+          {stageW > 0 && <Garment3D product={product} kind={kind} width={stageW} rotateY={shown}
+            flex={cloth.flex} drape={cloth.flex} phase={cloth.phase} ruffle={cloth.ruffle}
+            perspective={1400} layers={layers} />}
         </motion.div>
       </motion.div>
       <div className='flex flex-col items-center gap-2 mt-4'>

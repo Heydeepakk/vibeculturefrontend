@@ -12,8 +12,8 @@ const gradient = (stops, w, h) => {
   return `data:image/svg+xml;utf8,${encodeURIComponent(
     `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'><defs><linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>${s}</linearGradient></defs><rect width='${w}' height='${h}' fill='url(#g)'/></svg>`)}`
 }
-// how free the fabric is at each height: held by the hanger at the top, loose at the hem
-const free = y => Math.min(1, Math.max(0, (y - 0.08) / 0.92)) ** 1.5
+// how free the fabric is at each height: held at collar, fully loose at hem
+const free = y => Math.min(1, Math.max(0, (y - 0.04) / 0.96)) ** 1.2
 const YS = Array.from({ length: 21 }, (_, i) => i / 20)
 const weightMap = (w, h) => gradient(YS.map(y => [y, [free(y), free(y), free(y)]]), w, h)
 // red = sideways shift for the bend (0.5 = none), green 0.5 = no vertical shift
@@ -21,7 +21,7 @@ const bendMap = (w, h) => gradient(YS.map(y => [y, [0.5 + 0.5 * free(y) ** 1.3, 
 
 const read = v => (typeof v?.get === 'function' ? v.get() : v || 0)
 
-const ClothFilter = ({ id, width: W, height: H, flex, phase, ruffle, folds = 0.4 }) => {
+const ClothFilter = ({ id, width: W, height: H, flex, phase, ruffle, folds = 0.55 }) => {
   const mix = useRef(null)
   const wave = useRef(null)
   const bend = useRef(null)
@@ -35,8 +35,8 @@ const ClothFilter = ({ id, width: W, height: H, flex, phase, ruffle, folds = 0.4
       const a = 0.5 + 0.5 * Math.sin(p)
       mix.current?.setAttribute('k2', a.toFixed(3))
       mix.current?.setAttribute('k3', (1 - a).toFixed(3))
-      wave.current?.setAttribute('scale', (W * (0.035 + 0.09 * r)).toFixed(2))
-      bend.current?.setAttribute('scale', (-2 * H * Math.tan((f * Math.PI) / 180) * 0.5).toFixed(2))
+      wave.current?.setAttribute('scale', (W * (0.06 + 0.15 * r)).toFixed(2))
+      bend.current?.setAttribute('scale', (-2.5 * H * Math.tan((f * Math.PI) / 180) * 0.5).toFixed(2))
       const s = folds + 0.12 * Math.min(1, r)
       shade.current?.setAttribute('k1', s.toFixed(3))
       shade.current?.setAttribute('k2', (1 - s).toFixed(3))

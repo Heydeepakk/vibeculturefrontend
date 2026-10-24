@@ -11,13 +11,14 @@ import { LITE } from './perf'
 //  depth  – thickness of the garment, seen when it turns sideways
 //  taper  – how much thinner (front to back) the hem is than the top: hanging fabric falls together
 export const CLOTH = {
-  tshirt: { top: 0.205, height: 1.2, depth: 0.095, taper: 0.45 },
-  lowers: { top: 0.28, height: 1.45, depth: 0.06, taper: 0.3 },
-  jeans: { top: 0.27, height: 1.5, depth: 0.07, taper: 0.25 },
-  underwear: { top: 0.24, height: 0.8, depth: 0.045, taper: 0.2 },
+  tshirt:    { top: 0.18,  height: 1.2,  depth: 0.095, taper: 0.45 },
+  lowers:    { top: 0.26,  height: 1.45, depth: 0.06,  taper: 0.3  },
+  jeans:     { top: 0.25,  height: 1.5,  depth: 0.07,  taper: 0.25 },
+  underwear: { top: 0.22,  height: 0.8,  depth: 0.045, taper: 0.2  },
 }
 const HELD_BY_WAIST = { lowers: 0.1, jeans: 0.02, underwear: 0.12 } // clip inset from each waist end
-export const garmentHeight = (kind, width) => width * ((CLOTH[kind] || CLOTH.tshirt).top + (CLOTH[kind] || CLOTH.tshirt).height)
+// clothTop ≈ W * 0.85/2 * 0.28 ≈ 0.12 * W
+export const garmentHeight = (kind, width) => width * (0.12 + (CLOTH[kind] || CLOTH.tshirt).height)
 
 // where an image of the given aspect lands inside the box (object-contain, top aligned)
 const fitRect = (aspect, W, H) => (aspect > W / H
@@ -29,41 +30,69 @@ const fitRect = (aspect, W, H) => (aspect > W / H
 // round, and clipped to follow the hem taper.
 // On phones: half as many strips and fixed shading, since re-filtering dozens of clipped strips every frame
 // of a turn is what made the 360 view stutter.
-const SIDE_STEP = LITE ? 2 : 1
+// SVG side panel: draws the garment's real silhouette outline as a filled curved shape.
+// Much more accurate than folded CSS strips — follows sleeve taper, armpit curve, body width.
 const AutoSides = ({ res, fit, depth, taper, rotateY }) => {
-  const animated = useTransform(rotateY, r => `brightness(${0.78 + 0.22 * Math.abs(Math.sin((r * Math.PI) / 180))})`)
-  const filter = LITE ? 'brightness(0.9)' : animated
-  const depthAt = y => depth * (1 - (taper * y) / fit.h)
   const pts = res.outline
-  const strips = []
-  for (let i = 0; i < pts.length - 1; i += SIDE_STEP) {
-    const a = pts[i], b = pts[Math.min(i + SIDE_STEP, pts.length - 1)]
-    if (!a || !b) continue
-    const y0 = a.y * fit.h, y1 = b.y * fit.h
-    const dy = Math.max(0.5, y1 - y0)
-    for (const side of ['left', 'right']) {
-      const x0 = fit.x + (side === 'left' ? a.l : a.r) * fit.w
-      const x1 = fit.x + (side === 'left' ? b.l : b.r) * fit.w
-      const dx = x1 - x0
-      const len = Math.hypot(dx, dy) + 0.8 // overlap a hair so strips don't show seams
-      const stretch = len / dy
-      // the hem taper: each strip is short, so its average width stands in for a trapezoid
-      // (a clip-path inside a 3D scene costs a masked render pass per strip per frame — 10× slower to turn)
-      const sw = (depthAt(y0) + depthAt(y1)) / 2
-      strips.push(
-        <motion.div key={`${side}-${i}`} aria-hidden='true' style={{
-          position: 'absolute', top: y0, left: x0 - sw / 2, width: sw, height: len,
-          transformOrigin: '50% 0%',
-          transform: `rotateZ(${-Math.atan2(dx, dy)}rad) rotateY(${side === 'left' ? -90 : 90}deg)`,
-          backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
-          backgroundImage: `url(${res.sideTex[side]})`,
-          backgroundSize: `${sw}px ${fit.h * stretch}px`, backgroundPositionY: -y0 * stretch,
-          filter,
-        }} />
-      )
-    }
-  }
-  return strips
+  if (!pts?.length) return null
+
+  // visibility: brightest at 90deg (facing you), dark at 0/180 (edge-on)
+  const opacity = useTransform(rotateY, r => Math.abs(Math.sin((r * Math.PI) / 180)))
+  const brightness = useTransform(rotateY, r => 0.65 + 0.35 * Math.abs(Math.sin((r * Math.PI) / 180)))
+  const filter = LITE ? undefined : useTransform(brightness, b => `brightness(${b.toFixed(3)})`)
+
+  const depthAt = y => depth * (1 - (taper * y) / fit.h)
+
+  // build left and right SVG paths from the outline
+  const W = fit.x + fit.w + depth
+  const H = fit.h
+
+  // left side: outline goes down the left edge, offset inward by depth
+  const leftPts = pts.filter(Boolean)
+  const rightPts = pts.filter(Boolean)
+
+  const leftPath = leftPts.length < 2 ? '' : (() => {
+    const outer = leftPts.map(p => [fit.x + p.l * fit.w, p.y * fit.h])
+    const inner = leftPts.map(p => [fit.x + p.l * fit.w + depthAt(p.y * fit.h), p.y * fit.h])
+    const d = `M ${outer[0][0]} ${outer[0][1]} ` +
+      outer.slice(1).map(([x, y]) => `L ${x} ${y}`).join(' ') +
+      ` L ${inner[inner.length - 1][0]} ${inner[inner.length - 1][1]} ` +
+      inner.slice(0, -1).reverse().map(([x, y]) => `L ${x} ${y}`).join(' ') + ' Z'
+    return d
+  })()
+
+  const rightPath = rightPts.length < 2 ? '' : (() => {
+    const outer = rightPts.map(p => [fit.x + p.r * fit.w, p.y * fit.h])
+    const inner = rightPts.map(p => [fit.x + p.r * fit.w - depthAt(p.y * fit.h), p.y * fit.h])
+    const d = `M ${outer[0][0]} ${outer[0][1]} ` +
+      outer.slice(1).map(([x, y]) => `L ${x} ${y}`).join(' ') +
+      ` L ${inner[inner.length - 1][0]} ${inner[inner.length - 1][1]} ` +
+      inner.slice(0, -1).reverse().map(([x, y]) => `L ${x} ${y}`).join(' ') + ' Z'
+    return d
+  })()
+
+  // sample edge colours from the side texture
+  const leftCol = res.sideTex?.left ? `url(#stl-${res.aspect?.toFixed(3)})` : '#888'
+  const rightCol = res.sideTex?.right ? `url(#str-${res.aspect?.toFixed(3)})` : '#888'
+  const uid = res.aspect?.toFixed(3) || '0'
+
+  return (
+    <motion.svg
+      aria-hidden='true'
+      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', overflow: 'visible', opacity, filter }}
+    >
+      <defs>
+        <pattern id={`stl-${uid}`} patternUnits='userSpaceOnUse' width={depth} height={fit.h}>
+          <image href={res.sideTex.left} x='0' y='0' width={depth} height={fit.h} preserveAspectRatio='none' />
+        </pattern>
+        <pattern id={`str-${uid}`} patternUnits='userSpaceOnUse' width={depth} height={fit.h}>
+          <image href={res.sideTex.right} x='0' y='0' width={depth} height={fit.h} preserveAspectRatio='none' />
+        </pattern>
+      </defs>
+      {leftPath && <path d={leftPath} fill={`url(#stl-${uid})`} />}
+      {rightPath && <path d={rightPath} fill={`url(#str-${uid})`} />}
+    </motion.svg>
+  )
 }
 
 // A real side photo (left or right), standing on the garment's edge. Seen from the front it is edge-on and invisible.
@@ -140,27 +169,30 @@ const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, f
   // with a side photo, the garment is exactly as thick as the photo shows it
   const depth = sideRes
     ? Math.min(Math.max(frontFit.h * sideRes.aspect, 0.03 * W), 0.55 * W)
-    : (isCut ? geo.depth : 0.012) * W
+    : (isCut ? geo.depth : geo.depth * 0.6) * W
   const coreCount = isCut ? (LITE ? Math.max(2, Math.ceil(layers * 0.6)) : layers) : 2
-  // detailed views (pulled out / fitting room) get generated sides when no side photo was uploaded
-  const autoSides = !sideRes && isCut && layers > 5 && frontRes?.outline && frontRes?.sideTex
+  // show generated sides whenever we have outline data, not just on detailed views
+  const autoSides = !sideRes && isCut && frontRes?.outline && frontRes?.sideTex
   // faces lean in toward the hem so the garment is thinner at the bottom, matching the side taper
   const taper = sideRes || !isCut ? 0 : geo.taper
   const lean = (Math.atan((depth * taper) / 2 / Math.max(1, frontFit.h)) * 180) / Math.PI
 
   // clip the trouser hanger onto the actual waistband found in the photo
+  // hanger SVG is frontFit.w wide (viewBox 0-200), map pixel positions relative to frontFit.w
   const clips = useMemo(() => {
     if (!(kind in HELD_BY_WAIST) || !frontRes?.aspect) return undefined
     const { x, w } = fitRect(frontRes.aspect, W, H)
     const [l, r] = frontRes.waist || [0, 1]
     const inset = (r - l) * w * HELD_BY_WAIST[kind]
-    const toBox = px => ((px - frontFit.x) / frontFit.w) * 200
+    const toBox = px => ((px - x) / w) * 200
     return [toBox(x + l * w + inset), toBox(x + r * w - inset)]
   }, [kind, frontRes, W, H])
 
   const back = backRes || frontRes
   const skewShare = soft ? 0.45 : 1
-  const flexSkew = useTransform(typeof flex?.get === 'function' ? flex : STILL, f => f * skewShare)
+  // hem trails the swing: small skewX on the cloth div gives the lower half a lag
+  // but keep it subtle — the main swing is handled by rotate on the outer wrapper in ClosetSlot
+  const flexSkew = useTransform(typeof flex?.get === 'function' ? flex : STILL, f => f * (soft ? 0.3 : 0.5))
   const cores = Array.from({ length: coreCount }, (_, i) => {
     const t = coreCount === 1 ? 0 : (i / (coreCount - 1)) * 2 - 1 // -1 (back) … 1 (front)
     // only mix in the back photo when both were cut out the same way, or the side shows a photo edge
@@ -170,19 +202,38 @@ const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, f
     return { t, scale, src: source?.core || source?.src, plain: !source?.core }
   })
 
+  // Hanger geometry:
+  // The SuitBody shoulder span is x≈15–185 = 170/200 = 85% of viewBox width.
+  // A shirt's shoulder seams sit at ~72% of the image width.
+  // So hanger width = frontFit.w * (0.72 / 0.85) ≈ frontFit.w * 0.85, centred on the image.
+  const hangerW = frontFit.w * 0.85
+  const hangerH = hangerW / 2                        // viewBox is 200×100
+  const hangerLeft = frontFit.x + (frontFit.w - hangerW) / 2
+  // The shirt collar (neckline) sits at y≈40/100 of the hanger height.
+  // The shirt image top starts at the collar, so clothTop = hangerH * 0.40.
+  // We push the shirt up by 30% of that so the collar overlaps the hanger shoulders naturally.
+  const clothTop = hangerH * 0.28
+
   return (
-    <motion.div className='relative' style={{ width: W, height: garmentHeight(kind, W), rotateY, rotateX, z, transformPerspective: perspective, transformStyle: 'preserve-3d', originY: '5%' }}>
-      {/* hanger with a little thickness: two faces and a darker middle */}
+    <motion.div className='relative' style={{ width: W, height: clothTop + H + 8, rotateY, rotateX, z, transformPerspective: perspective, transformStyle: 'preserve-3d', originY: '5%' }}>
+
+      {/* hanger sits behind the shirt, shoulders hidden under the fabric */}
       {(layers > 5 ? [-1.6, 0, 1.6] : [0]).map(hz => (
-        <Hanger key={hz} kind={kind} clips={clips} className='absolute top-0'
-          style={{ left: frontFit.x, width: frontFit.w, transform: `translateZ(${hz}px)`, filter: hz === 0 && layers > 5 ? 'brightness(0.72)' : undefined }} />
+        <Hanger key={hz} kind={kind} clips={clips} className='absolute'
+          style={{
+            left: hangerLeft,
+            top: 0,
+            width: hangerW,
+            height: hangerH,
+            transform: `translateZ(${hz}px)`,
+            filter: hz === 0 && layers > 5 ? 'brightness(0.72)' : undefined,
+          }} />
       ))}
 
       {soft && <ClothFilter id={soft} width={W} height={H} flex={drape} phase={phase} ruffle={ruffle} />}
 
-      {/* the cloth hangs from the hanger and bends: `flex` skews it a little from the top and the filter curves
-          the hem the rest of the way, so it trails like fabric rather than tilting like a board */}
-      <motion.div className='absolute left-0 w-full' style={{ top: geo.top * W, height: H, transformStyle: 'preserve-3d', skewX: flexSkew, originY: '0%' }}>
+      {/* cloth hangs from the collar point, overlapping the hanger shoulders */}
+      <motion.div className='absolute left-0 w-full' style={{ top: clothTop, height: H, transformStyle: 'preserve-3d', skewX: flexSkew, originY: '0%' }}>
         {frontRes && cores.map(c => (
           <img key={c.t} src={c.src} alt='' aria-hidden='true' draggable={false}
             className={`absolute inset-0 w-full h-full object-contain object-top select-none ${c.plain ? 'rounded-md' : ''}`}
@@ -203,7 +254,6 @@ const Garment3D = ({ product, kind = 'tshirt', width: W, rotateY, rotateX = 0, f
         <div style={faceStyle(`translateZ(${depth / 2 + 0.5}px) rotateX(${-lean}deg)`)}>
           <Face res={frontRes} shade={shade} alt={product.name} cloth={soft} />
         </div>
-        {/* a packed garment on a phone never turns far enough to show its back: one layer fewer each */}
         {(!LITE || showBack) && (
           <div style={faceStyle(`rotateY(180deg) translateZ(${depth / 2 + 0.5}px) rotateX(${-lean}deg)`)}>
             <Face res={back} mirrored={!backRes} shade={shade} alt={`${product.name} back`} cloth={soft} />

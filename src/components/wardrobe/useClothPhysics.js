@@ -39,10 +39,11 @@ const useClothPhysics = ({ index = 0, railSample, enabled = true, calm = false, 
   const live = useRef({ enabled, calm, strength, foreground })
   live.current = { enabled, calm, strength, foreground }
 
-  // each garment has its own length/weight, so they never move in lockstep
-  const k = 13 + (index % 5) * 1.7
-  const c = 1.05 + (index % 3) * 0.3
-  const lag = index * 0.18 // gusts reach garments further down the rail a moment later
+  // each garment has its own length/weight so they never move in lockstep
+  // lower k = longer pendulum = slower, more realistic swing for a full-length shirt
+  const k = 7 + (index % 5) * 1.2
+  const c = 0.7 + (index % 3) * 0.2
+  const lag = index * 0.18
   const hand = index % 2 ? 1 : -1
 
   useAnimationFrame((time, delta) => {
@@ -58,21 +59,21 @@ const useClothPhysics = ({ index = 0, railSample, enabled = true, calm = false, 
 
     // a real pendulum on a moving support: gravity pulls it back (sin, so big swings feel weighty),
     // the support's acceleration throws it (cos), air drag grows with the square of the speed
-    const force = air * 20 + flutter(t * 0.7 + index) * 2.2 * air
-      - acc * 0.05 * Math.cos(st.a * RAD)
-      - (v * 0.012 + v * Math.abs(v) * 0.000006)
+    const force = air * 22 + flutter(t * 0.7 + index) * 2.5 * air
+      - acc * 0.06 * Math.cos(st.a * RAD)
+      - (v * 0.010 + v * Math.abs(v) * 0.000005)
     st.w += (-k * Math.sin(st.a * RAD) / RAD - c * st.w + force) * dt
     st.a += st.w * dt
-    if (Math.abs(st.a) > 58) { st.a = Math.sign(st.a) * 58; st.w *= -0.3 } // knocks the rail and bounces back
+    if (Math.abs(st.a) > 55) { st.a = Math.sign(st.a) * 55; st.w *= -0.25 }
 
     // the hanger turns slightly on its hook as gusts come and go
     const torque = (air - 0.35) * 26 * hand
     st.tv += (-6 * st.tw - 1.5 * st.tv + torque) * dt
     st.tw += st.tv * dt
 
-    // fabric: the hem trails the swing and ripples in the gusts
-    const target = clamp(-st.w * 0.22, -9, 9) + flutter(t * 1.3 + index * 2) * 0.9 * air
-    st.fv += ((target - st.f) * 60 - st.fv * 9) * dt
+    // fabric hem trails the swing — gentle lag, not a harsh skew
+    const target = clamp(-st.w * 0.28, -12, 12) + flutter(t * 1.3 + index * 2) * 1.0 * air
+    st.fv += ((target - st.f) * 45 - st.fv * 7) * dt
     st.f += st.fv * dt
 
     // soft fabric never stops moving at once: the ripple eases in with a gust or a swing and fades slowly

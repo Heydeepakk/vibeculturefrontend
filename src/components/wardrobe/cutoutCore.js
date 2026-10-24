@@ -97,8 +97,8 @@ export const processImage = async (img) => {
 // front and back, lighter in the middle, a side seam down the centre and faint vertical drape.
 // `outline` samples the garment's real left/right edge at regular heights, so the generated sides follow
 // the sleeves, the armpit and the body as one continuous surface.
-const SIDE_W = 48
-const OUTLINE_POINTS = 30
+const SIDE_W = 64
+const OUTLINE_POINTS = 40
 const buildSides = (img, w, h) => {
   const s = img.data
   const th = Math.min(h, 420)
@@ -135,14 +135,18 @@ const buildSides = (img, w, h) => {
       if (!row) continue
       const col = side === 'left' ? row.cl : row.cr
       for (let tx = 0; tx < SIDE_W; tx++) {
-        // u: 0 at the back face … 1 at the front face (left texture has the front on its right)
         const u0 = tx / (SIDE_W - 1)
         const u = side === 'left' ? u0 : 1 - u0
         let shade = 0.56 + 0.44 * Math.sin(Math.PI * u) ** 0.7
         shade *= 1 + 0.05 * Math.sin(u * Math.PI * 6 + y * 0.045) + 0.03 * Math.sin(y * 0.29 + u * 9)
-        if (Math.abs(u - 0.5) < 0.025) shade *= 0.8 // side seam
+        if (Math.abs(u - 0.5) < 0.025) shade *= 0.8
+        // fade alpha at both edges so the side blends into front/back faces with no hard seam
+        const edgeFade = Math.min(1, Math.min(u, 1 - u) * 12)
         const i = (ty * SIDE_W + tx) * 4
-        d[i] = Math.min(255, col[0] * shade); d[i + 1] = Math.min(255, col[1] * shade); d[i + 2] = Math.min(255, col[2] * shade); d[i + 3] = 255
+        d[i] = Math.min(255, col[0] * shade)
+        d[i + 1] = Math.min(255, col[1] * shade)
+        d[i + 2] = Math.min(255, col[2] * shade)
+        d[i + 3] = Math.round(255 * edgeFade)
       }
     }
     ctx.putImageData(out, 0, 0)
@@ -153,7 +157,8 @@ const buildSides = (img, w, h) => {
   for (let b = 0; b <= OUTLINE_POINTS; b++) {
     const y = Math.min(h - 1, Math.round((b * (h - 1)) / OUTLINE_POINTS))
     let row = null
-    for (let d = 0; d < 4 && !row; d++) row = rows[y - d] || rows[y + d] || null
+    // search up to 6 rows for a non-null row (handles gaps at sleeve tips)
+    for (let d = 0; d < 6 && !row; d++) row = rows[y - d] || rows[y + d] || null
     outline.push(row ? { y: y / h, l: row.l / w, r: (row.r + 1) / w } : null)
   }
   return { left: paint('left'), right: paint('right'), outline }

@@ -57,9 +57,9 @@ const Hanger = ({ kind = 'tshirt', clips = [52, 148], className = '', style }) =
   )
 }
 
-// drawn full width, then narrowed so the shoulder tips stay hidden inside a shirt's shoulders
+// scale(0.72) keeps shoulder tips hidden under the shirt's sleeve seams
 const SuitBody = ({ wood }) => (
-  <g transform='translate(100 40) scale(0.78 0.9) translate(-100 -40)'>
+  <g transform='translate(100 40) scale(0.72 1) translate(-100 -40)'>
     {/* trouser bar between the shoulder tips */}
     <path d='M18 84 L18 89' stroke='#6d4421' strokeWidth='3' strokeLinecap='round' />
     <path d='M182 84 L182 89' stroke='#6d4421' strokeWidth='3' strokeLinecap='round' />
